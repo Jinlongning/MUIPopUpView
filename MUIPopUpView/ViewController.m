@@ -59,7 +59,6 @@
         typeof(&*weakSelf) strongSelf = weakSelf;
         NSLog(@"%@",indexPath);
         [strongSelf.popUpView hide];
-        [strongSelf.popUpView removeFromSuperview];
     };
     
     [self.popUpView show];

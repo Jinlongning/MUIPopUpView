@@ -41,9 +41,99 @@ static NSString * const FillColorAnimation = @"fillColor";
 #define MUIPopUpBorderColor [UIColor colorWithRed:214/255.0 green:215/255.0 blue:215/255.0 alpha:1.0]
 #define MUIPopUpBackgroundColor [UIColor whiteColor]
 
+
+@interface MUIPopUpWindow : UIWindow
+
+@property (strong, nonatomic) UIWindow *trick;
+@property (strong, nonatomic) NSMutableArray *schedulingAlerts;
+
+@end
+
+@implementation MUIPopUpWindow
+
++ (instancetype)alertWindow {
+    
+    for (UIWindow *window in [UIApplication sharedApplication].windows) {
+        if ([window isKindOfClass:self]) return (MUIPopUpWindow *)window;
+    }
+    
+    MUIPopUpWindow *window = [[self alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    window.windowLevel = UIWindowLevelAlert;
+    window.schedulingAlerts = [NSMutableArray array];
+    return window;
+}
+
+- (void)oneFinger:(UITapGestureRecognizer *)gestureRecognizer {
+    
+    MUIPopUpView *alertView = [_schedulingAlerts lastObject];
+    
+    [alertView hide];
+}
+
+- (void)showAlertView:(UIView *)alertView {
+    
+    if (!alertView) return;
+    [_schedulingAlerts addObject:alertView];
+    [self showAlertViewIfPossible];
+    [self advanceTrick];
+}
+
+- (void)dismissAlertView:(UIView *)alertView {
+    
+    if (!alertView) return;
+    [_schedulingAlerts removeObject:alertView];
+    [self showAlertViewIfPossible];
+    [self advanceTrick];
+    [self dismissAlertViewIfNeeded:alertView];
+}
+
+- (void)advanceTrick {
+    
+    self.trick = _schedulingAlerts.count > 0 ? self : nil;
+}
+
+- (void)showAlertViewIfPossible {
+    
+    UIView *alertView = [_schedulingAlerts lastObject];
+    if (!alertView || alertView.window == self) return;
+    
+    self.hidden = NO;
+    self.rootViewController = [[UIViewController alloc] init];
+    UIView *container = self.rootViewController.view;
+    
+    [self addSubview:alertView];
+    //[container addSubview:alertView];alertView加到containerView会造成cell的点击事件与container的点击事件冲突父事件拦截子事件的情况
+    [container addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(oneFinger:)]];
+    
+    alertView.translatesAutoresizingMaskIntoConstraints = NO;
+    alertView.transform = CGAffineTransformMakeScale(0.3, 0.3);
+    [UIView animateWithDuration:0.3f animations:^{
+        alertView.transform = CGAffineTransformIdentity;
+    }];
+}
+
+- (void)dismissAlertViewIfNeeded:(UIView *)alertView {
+    
+    if (!alertView || alertView.window != self || _schedulingAlerts.count > 0) return;
+    
+    [UIView animateWithDuration:0.3f animations:^{
+        self.rootViewController.view.alpha = 0.f;
+    } completion:^(BOOL finished) {
+        self.rootViewController.view.alpha = 1.f;
+        self.hidden = _schedulingAlerts.count == 0;
+        [alertView removeFromSuperview];
+    }];
+}
+
+@end
+
 @interface MUIPopUpView () <UITableViewDataSource, UITableViewDelegate>
 
 @property (strong, nonatomic) UITableView *tableView;
+/*!
+ *  显示标题
+ */
+@property (strong, nonatomic) NSArray *images;
 /*!
  *  显示标题
  */
@@ -52,10 +142,15 @@ static NSString * const FillColorAnimation = @"fillColor";
 @end
 
 @implementation MUIPopUpView {
-
+    
     CGFloat _arrowCenterOffset;
+    CGFloat _arrowHeight;
+    
+    UIColor *_textColor;
+    UIColor *_backgroundColor;
+    
     ArrowDirection _arrowDirection;
-
+    
     CAShapeLayer *_backgroundLayer;
 }
 
@@ -69,21 +164,32 @@ static NSString * const FillColorAnimation = @"fillColor";
 
 - (id)initWithFrame:(CGRect)frame titles:(NSArray *)titles {
     
+    return [self initWithFrame:frame titles:titles images:@[]];
+}
+
+- (id)initWithFrame:(CGRect)frame titles:(NSArray *)titles images:(NSArray *)images {
+    
     if (self = [super initWithFrame:frame]) {
         
         self.alpha = 0.0;
+        self.images = images ? : @[];
         self.titles = titles ? : @[];
         self.userInteractionEnabled = YES;
+        
+        _arrowHeight = MUI_ARROW_HEIGHT;
+        
+        _textColor = [UIColor colorWithRed:51/255.0 green:51/255.0 blue:51/255.0 alpha:1.0];
+        _backgroundColor = [UIColor colorWithRed:255/255.0 green:255/255.0 blue:255/255.0 alpha:1.0];
         
         _backgroundLayer = [CAShapeLayer layer];
         _backgroundLayer.lineWidth = MUI_BORDER_WIDTH;
         _backgroundLayer.fillColor = MUIPopUpBackgroundColor.CGColor;
         _backgroundLayer.strokeColor = MUIPopUpBorderColor.CGColor;
-
+        
         [self.layer addSublayer:_backgroundLayer];
+        
+        [self setupTableViewWithFrame:frame];
     }
-    
-    [self setupTableViewWithFrame:frame];
     
     return self;
 }
@@ -94,11 +200,11 @@ static NSString * const FillColorAnimation = @"fillColor";
         
         if (ArrowDirectionDown == _arrowDirection) {
             CGRect tableFrame = self.tableView.frame;
-            tableFrame.origin.y -= MUI_ARROW_HEIGHT;
+            tableFrame.origin.y -= _arrowHeight;
             self.tableView.frame = tableFrame;
         } else {
             CGRect tableFrame = self.tableView.frame;
-            tableFrame.origin.y += MUI_ARROW_HEIGHT;
+            tableFrame.origin.y += _arrowHeight;
             self.tableView.frame = tableFrame;
         }
         
@@ -109,22 +215,55 @@ static NSString * const FillColorAnimation = @"fillColor";
 - (void)setBorderColor:(UIColor *)color {
     
     [_backgroundLayer removeAnimationForKey:FillColorAnimation];
-   
+    
     _backgroundLayer.strokeColor = color.CGColor;
 }
 
 - (void)setBackgroundColor:(UIColor *)color {
     
-    [_backgroundLayer removeAnimationForKey:FillColorAnimation];
-   
-    _backgroundLayer.fillColor = color.CGColor;
+    if ([color isKindOfClass:[UIColor class]]) {
+        
+        _backgroundColor = color;
+        
+        [_backgroundLayer removeAnimationForKey:FillColorAnimation];
+        
+        _backgroundLayer.fillColor = _backgroundColor.CGColor;
+    }
+}
+
+- (void)setTextColor:(UIColor *)color {
+    
+    if ([color isKindOfClass:[UIColor class]]) {
+        
+        _textColor = color;
+    }
+}
+
+- (void)setArrowHeight:(CGFloat)heitht {
+    
+    // only redraw if the offset has changed
+    if (_arrowHeight != heitht) {
+        
+        _arrowHeight = heitht;
+        
+        CGRect tableRect = self.tableView.frame;
+        tableRect.origin.y = _arrowHeight;
+        tableRect.size.height = CGRectGetHeight(self.frame) - _arrowHeight;
+        self.tableView.frame = tableRect;
+        
+        CGRect popUpRect = self.frame;
+        
+        [self drawPath];
+        
+        self.frame = popUpRect;// reset frame after redraw
+    }
 }
 
 - (void)setArrowCenterOffset:(CGFloat)offset {
-
+    
     // only redraw if the offset has changed
     if (_arrowCenterOffset != offset) {
-       
+        
         _arrowCenterOffset = offset;
         
         CGRect popUpRect = self.frame;
@@ -137,7 +276,7 @@ static NSString * const FillColorAnimation = @"fillColor";
 }
 
 - (void)show {
-
+    
     [self drawPath];
     
     [CATransaction begin];
@@ -145,27 +284,31 @@ static NSString * const FillColorAnimation = @"fillColor";
     {
         // start the transform animation from its current value if it's already running
         NSValue *fromValue1 = [self.layer.presentationLayer valueForKey:@"transform"];
-        NSValue *fromValue2 = [NSValue valueWithCATransform3D:CATransform3DMakeScale(0.5, 0.5, 1)];
+        NSValue *fromValue2 = [NSValue valueWithCATransform3D:CATransform3DMakeScale(0.3, 0.3, 0.5)];
         NSValue *fromValue = [self.layer animationForKey:@"transform"] ? fromValue1 : fromValue2;
         
         CABasicAnimation *scaleAnimation = [CABasicAnimation animationWithKeyPath:@"transform"];
         scaleAnimation.fromValue = fromValue;
         scaleAnimation.toValue = [NSValue valueWithCATransform3D:CATransform3DIdentity];
-        scaleAnimation.duration = 0.4;
+        scaleAnimation.duration = 0.3;
         scaleAnimation.removedOnCompletion = NO;
         scaleAnimation.fillMode = kCAFillModeForwards;
-        [scaleAnimation setTimingFunction:[CAMediaTimingFunction functionWithControlPoints:0.8 :2.5 :0.35 :0.5]];
+        scaleAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseIn];
+        
         [self.layer addAnimation:scaleAnimation forKey:@"transform"];
         
         CABasicAnimation *fadeInAnimation = [CABasicAnimation animationWithKeyPath:@"opacity"];
         fadeInAnimation.fromValue = [self.layer.presentationLayer valueForKey:@"opacity"];
-        fadeInAnimation.duration = 0.1;
+        fadeInAnimation.duration = 0.2;
         fadeInAnimation.toValue = @1.0;
         self.layer.opacity = 1.0;
+        
         [self.layer addAnimation:fadeInAnimation forKey:@"opacity"];
     }
     
     [CATransaction commit];
+    
+    [[MUIPopUpWindow alertWindow] showAlertView:self];
 }
 
 - (void)hide {
@@ -175,22 +318,26 @@ static NSString * const FillColorAnimation = @"fillColor";
     {
         CABasicAnimation *scaleAnimation = [CABasicAnimation animationWithKeyPath:@"transform"];
         scaleAnimation.fromValue = [self.layer.presentationLayer valueForKey:@"transform"];
-        scaleAnimation.toValue = [NSValue valueWithCATransform3D:CATransform3DMakeScale(0.5, 0.5, 1)];
-        scaleAnimation.duration = 0.6;
+        scaleAnimation.toValue = [NSValue valueWithCATransform3D:CATransform3DMakeScale(0.3, 0.3, 0.5)];
+        scaleAnimation.duration = 0.3;
         scaleAnimation.removedOnCompletion = NO;
         scaleAnimation.fillMode = kCAFillModeForwards;
-        [scaleAnimation setTimingFunction:[CAMediaTimingFunction functionWithControlPoints:0.1 :-2 :0.3 :3]];
+        scaleAnimation.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+        
         [self.layer addAnimation:scaleAnimation forKey:@"transform"];
         
         CABasicAnimation *fadeOutAnimation = [CABasicAnimation animationWithKeyPath:@"opacity"];
         fadeOutAnimation.fromValue = [self.layer.presentationLayer valueForKey:@"opacity"];
         fadeOutAnimation.toValue = @0.0;
-        fadeOutAnimation.duration = 0.8;
+        fadeOutAnimation.duration = 0.25;
         self.layer.opacity = 0.0;
+        
         [self.layer addAnimation:fadeOutAnimation forKey:@"opacity"];
     }
     
     [CATransaction commit];
+    
+    [[MUIPopUpWindow alertWindow] dismissAlertView:self];
 }
 
 #pragma mark -
@@ -198,7 +345,7 @@ static NSString * const FillColorAnimation = @"fillColor";
 
 - (void)setupTableViewWithFrame:(CGRect)frame {
     
-    CGRect tableFrame = CGRectMake(0,MUI_ARROW_HEIGHT,CGRectGetWidth(frame),CGRectGetHeight(frame)-MUI_ARROW_HEIGHT);
+    CGRect tableFrame = CGRectMake(0,_arrowHeight,CGRectGetWidth(frame),CGRectGetHeight(frame)-_arrowHeight);
     self.tableView = [[UITableView alloc] initWithFrame:tableFrame];
     self.tableView.delegate = self;
     self.tableView.dataSource = self;
@@ -211,13 +358,13 @@ static NSString * const FillColorAnimation = @"fillColor";
 }
 
 - (void)drawPath {
-
+    
     // Create rounded rect
     CGRect roundedRect = self.bounds;
-    roundedRect.size.height -= MUI_ARROW_HEIGHT;
+    roundedRect.size.height -= _arrowHeight;
     
     if (ArrowDirectionUp == _arrowDirection) {
-        roundedRect.origin.y += MUI_ARROW_HEIGHT;
+        roundedRect.origin.y += _arrowHeight;
     }
     
     // Create rounded path
@@ -228,19 +375,22 @@ static NSString * const FillColorAnimation = @"fillColor";
     
     CGFloat arrowX = CGRectGetMidX(self.bounds) + _arrowCenterOffset;
     
-    if (ArrowDirectionDown == _arrowDirection) {
-        [arrowPath moveToPoint:CGPointMake((arrowX - MUI_ARROW_HALFWIDTH), CGRectGetMaxY(roundedRect))];
-        [arrowPath addLineToPoint:CGPointMake(arrowX, CGRectGetMaxY(self.bounds))];
-        [arrowPath addLineToPoint:CGPointMake((arrowX + MUI_ARROW_HALFWIDTH), CGRectGetMaxY(roundedRect))];
-//        [arrowPath closePath];
-
-    } else {
-        [arrowPath moveToPoint:CGPointMake((arrowX - MUI_ARROW_HALFWIDTH), CGRectGetMinX(roundedRect)+MUI_ARROW_HEIGHT)];
-        [arrowPath addLineToPoint:CGPointMake(arrowX, CGRectGetMinX(self.bounds))];
-        [arrowPath addLineToPoint:CGPointMake((arrowX + MUI_ARROW_HALFWIDTH), CGRectGetMinX(roundedRect)+MUI_ARROW_HEIGHT)];
-//        [arrowPath closePath];
+    if (_arrowHeight > 0) {
+        
+        if (ArrowDirectionDown == _arrowDirection) {
+            [arrowPath moveToPoint:CGPointMake((arrowX - MUI_ARROW_HALFWIDTH), CGRectGetMaxY(roundedRect))];
+            [arrowPath addLineToPoint:CGPointMake(arrowX, CGRectGetMaxY(self.bounds))];
+            [arrowPath addLineToPoint:CGPointMake((arrowX + MUI_ARROW_HALFWIDTH), CGRectGetMaxY(roundedRect))];
+            //        [arrowPath closePath];
+            
+        } else {
+            [arrowPath moveToPoint:CGPointMake((arrowX - MUI_ARROW_HALFWIDTH), CGRectGetMinX(roundedRect)+_arrowHeight)];
+            [arrowPath addLineToPoint:CGPointMake(arrowX, CGRectGetMinX(self.bounds))];
+            [arrowPath addLineToPoint:CGPointMake((arrowX + MUI_ARROW_HALFWIDTH), CGRectGetMinX(roundedRect)+_arrowHeight)];
+            //        [arrowPath closePath];
+        }
     }
-
+    
     // combine arrow path and rounded rect
     [roundedRectPath appendPath:arrowPath];
     
@@ -267,7 +417,9 @@ static NSString * const FillColorAnimation = @"fillColor";
     if (!cell) {
         
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"MUIPopUpCell"];
-        cell.textLabel.textAlignment = NSTextAlignmentCenter;
+        cell.textLabel.textAlignment = _images.count ? NSTextAlignmentLeft : NSTextAlignmentCenter;
+        cell.textLabel.textColor = _textColor;
+        cell.backgroundColor = _backgroundColor;
         CGRect lineFrame = CGRectMake(0, MUI_POPUPCELL_HEIGHT-MUI_BORDER_WIDTH, CGRectGetWidth(self.bounds), MUI_BORDER_WIDTH);
         UIView *line = [[UIView alloc] initWithFrame:lineFrame];
         [line setBackgroundColor:MUIPopUpBorderColor];
@@ -275,10 +427,14 @@ static NSString * const FillColorAnimation = @"fillColor";
     }
     
     if (indexPath.row < self.titles.count) {
-       
+        
         cell.textLabel.text = [self.titles objectAtIndex:indexPath.row];
+        
+        if (indexPath.row < self.images.count) {
+            cell.imageView.image = [self.images objectAtIndex:indexPath.row];
+        }
     }
-
+    
     return cell;
 }
 

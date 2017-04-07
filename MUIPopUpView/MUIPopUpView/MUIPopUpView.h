@@ -30,12 +30,19 @@ typedef void(^DidSelectRowAtIndexPath)(NSIndexPath *indexPath);
 @interface MUIPopUpView : UIView
 
 /**
- *    @param frame
+ *    @param frame frame
  *
  *    @param titles 显示标题数组
  */
 - (id)initWithFrame:(CGRect)frame titles:(NSArray *)titles;
 
+/**
+ *    @param frame frame
+ *
+ *    @param titles 显示标题数组
+ *    @param images 显示图标数组
+ */
+- (id)initWithFrame:(CGRect)frame titles:(NSArray *)titles images:(NSArray *)images;
 /**
  *    设置边界色
  */
@@ -68,8 +75,6 @@ typedef void(^DidSelectRowAtIndexPath)(NSIndexPath *indexPath);
 
 /*!
  *  隐藏
- *
- *  @note 若要释放弹出视图请[popUpView hide]后调用[popUpView removeFromSuperview];
  */
 - (void)hide;
 
